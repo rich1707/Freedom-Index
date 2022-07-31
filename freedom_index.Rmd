@@ -1,0 +1,622 @@
+---
+title: "Tidy Tuesday - World Freedom Index"
+author: "Richard Ryan"
+date: '28 May 2022'
+output: 
+   html_document:
+      css: style.css
+      theme: readable
+      highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+   echo = TRUE, 
+   message = FALSE, 
+   warning = FALSE, 
+   paged.print = FALSE
+)
+```
+
+<body style="background-color:#fcfbff;">
+
+# Introduction
+
+The data we'll be using for the exercise comes from the *Tidy Tuesday* repository on [Github](https://github.com/rfordatascience/tidytuesday) and deals with political rights and civil liberties in each of the world's countries. The dataset is available [here.](https://github.com/rfordatascience/tidytuesday/blob/master/data/2022/2022-02-22/readme.md)
+
+First let's load the packages we'll be using:
+
+```{r}
+
+library(tidyverse)
+library(tidymodels)
+library(janitor)
+library(scales)
+library(WDI)
+library(countrycode)
+library(vip)
+
+```
+
+I've already downloaded the dataset to my local machine, so we can now read in the data:
+
+```{r}
+
+freedom_data <- read_csv("freedom_data.csv")
+
+```
+
+We can get an idea of the data with which we'll be dealing by using the `glimpse()` function:
+
+```{r}
+
+glimpse(freedom_data)
+
+```
+
+# Data Cleaning
+
+Are there any missing values?
+
+```{r}
+
+freedom_data %>% 
+   summarise(across(everything(), ~sum(is.na(.x))))
+
+```
+
+We can use the `janitor` package to help clean up the variable names, which aren't particularly user friendly as things stand. We can also clean up one of the values of the `country` feature.
+
+```{r}
+
+freedom_data <- freedom_data %>% 
+   clean_names() %>% 
+   rename(civil_liberties = cl, political_rights = pr) %>% 
+   mutate(country = if_else(country == "CÃƒÂ´te dÃ¢â‚¬â„¢Ivoire", "Ivory Coast", country))
+
+```
+
+Thankfully this is all the data-cleaning we need to do.
+
+# Exploratory Analysis 
+
+Start with a basic plot showing the situation by region:
+
+```{r}
+
+freedom_data %>% 
+   filter(year == 2020) %>% 
+   group_by(region_name) %>% 
+   summarise(
+      total = n(),
+      free = sum(status == "F"),
+      .groups = "drop"
+   ) %>% 
+   pivot_longer(
+      cols = total:free,
+      names_to = "names",
+      values_to = "values"
+   ) %>% 
+   mutate(region_name = factor(
+      region_name, levels = c("Oceania", "Americas", "Europe", "Asia", "Africa"))) %>% 
+   ggplot(aes(x = region_name, y = values, fill = names)) + 
+   geom_col(position = "dodge", colour = "black", alpha = 0.5, width = 0.75) + 
+   theme_light() + 
+   scale_fill_manual(values = c("black", "orange3"),
+                     labels = c("Free Countries in Region", "Total Countries in Region")) + 
+   labs(x = NULL, y = NULL,
+        title = "Total Countries by Region") +
+   theme(
+      axis.text.x = element_text(size = 11, face = "bold"),
+      axis.text.y = element_text(size = 11, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold"),
+      legend.text = element_text(face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   )
+
+```
+
+Clearly the situation is very bad indeed in Asia and Africa. As these regions are less economically developed than the rest, perhaps it would be worthwhile to build a plot based on the `is_ldc` (least developed country) feature:
+
+```{r}
+
+freedom_data %>% 
+   group_by(year, is_ldc) %>% 
+   mutate(free = sum(status == "F"),
+          part_free = sum(status == "PF"),
+          not_free = sum(status == "NF")) %>% 
+   ungroup() %>% 
+   select(year, is_ldc, contains("free")) %>% 
+   distinct() %>%
+   group_by(year, is_ldc) %>% 
+   mutate(totals = free + part_free + not_free) %>% 
+   ungroup() %>%
+   mutate(free_percent = free / totals,
+          part_free_percent = part_free / totals,
+          not_free_percent = not_free / totals) %>%
+   select(year, is_ldc, contains("percent")) %>%
+   pivot_longer(
+      cols = contains("percent"),
+      names_to = "names",
+      values_to = "values"
+   ) %>%
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
+   ggplot(aes(x = year, y = values, colour = names)) +
+   geom_line(size = 2, alpha = 0.65) +
+   theme_light() + 
+   scale_y_continuous(labels = label_percent(accuracy = 1)) +
+   scale_color_manual(values = c("black", "orange3", "ivory4"),
+                      labels = c("Free", "Partly Free", "Not Free")) + 
+   labs(x = NULL, y = NULL,
+        title = "Percentage of free countries by developed status") + 
+   facet_wrap(~is_ldc) + 
+   theme(
+      axis.text.x = element_text(size = 11, face = "bold"),
+      axis.text.y = element_text(size = 11, face = "bold"),
+      strip.text.x = element_text(size = 12, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold"),
+      legend.text = element_text(face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   )
+
+```
+
+The difference between the developed and least-developed world is striking. We can also quantify this difference with a Chi_squared test of independence using the `infer` package bundled with `tidymodels`:
+
+```{r}
+
+diff_hat <- freedom_data %>% 
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
+   specify(status ~ is_ldc) %>% 
+   calculate(stat = "Chisq")
+
+freedom_data %>% 
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
+   specify(status ~ is_ldc) %>% 
+   assume(distribution = "Chisq") %>% 
+   get_p_value(obs_stat = diff_hat, direction = "two-sided")
+
+```
+
+The `p_value` is close to zero, so we can conclude that `status` and `is_ldc` are not independent.
+
+As always, we should not jump to the conclusion that there is a causal relationship between the two. In any case, even if we do believe the two are in a causal relationship, it is difficult to say in which direction this relationship runs: are countries least-developed because they are not free, or are they not free because they are least economically developed?
+
+It's impossible to answer this question; besides the issue is clearly too complex to place too much stress on a single (possible) causal relationship. Consider the following plot:
+
+```{r}
+
+freedom_data %>% 
+   filter(year == 1995 | year == 2020) %>% 
+   mutate(year = factor(year)) %>% 
+   mutate(region_name = factor(
+      region_name, levels = c("Asia", "Africa", "Oceania", "Americas","Europe")
+   )) %>% 
+   group_by(year, region_name) %>% 
+   summarise(
+      free = sum(status == "F"),
+      .groups = "drop"
+   ) %>% 
+   ggplot(aes(x = region_name, y = free, fill = year)) + 
+   geom_col(position = "dodge", colour = "black", alpha = 0.5, width = 0.76) +
+   theme_light() + 
+   scale_fill_manual(values = c("black", "orange3"),
+                     labels = c("Free Countries in 1995", "Free Countries in 2020")) +
+   labs(x = NULL, y = NULL,
+        title = "Total of Free Countries in 1995 and in 2020",
+        subtitle = "Showing the change in the number of free countries in each region") +
+   theme(
+      axis.text.x = element_text(size = 11, face = "bold"),
+      axis.text.y = element_text(size = 11, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold"),
+      legend.text = element_text(face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   ) 
+
+```
+
+As we can see, the number of free countries has increased slightly in all regions bar Africa. This is clearly an improvement, albeit a minor one. However, in the following plot, showing European freedoms as measured by `political_rights` and `civil_liberties`, a different picture emerges:
+
+```{r}
+
+freedom_data %>% 
+   filter(region_name == "Europe") %>% 
+   mutate(percent_pr = political_rights / 7,
+          percent_cl = civil_liberties / 7) %>% 
+   group_by(year, region_name) %>% 
+   summarise(pr_x_year = 1 - mean(percent_pr),
+             cl_x_year = 1 - mean(percent_cl),
+             .groups = "drop") %>% 
+   pivot_longer(
+      cols = pr_x_year:cl_x_year,
+      names_to = "names",
+      values_to = "values"
+   ) %>% 
+   ggplot(aes(x = year, y = values, colour = names)) + 
+   geom_line(size = 2, alpha = 0.65) + 
+   theme_light() + 
+   scale_y_continuous(labels = label_percent(accuracy = 1)) + 
+   scale_color_manual(values = c("black", "orange3"),
+                      labels = c("Civil Liberties", "Political Rights")) + 
+   labs(x = NULL, y = NULL,
+        title = "The evolution of Civil Liberties and Political Rights of countries in Europe",
+        subtitle = "Showing the average points awarded as a percentage of the maximum possible") + 
+   theme(
+      axis.text.x = element_text(size = 11, face = "bold"),
+      axis.text.y = element_text(size = 11, face = "bold"),
+      plot.title = element_text(size = 13, face = "bold"),
+      legend.text = element_text(size = 11, face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   )
+
+```
+
+Here we can see that Europe is going backwards in terms of freedoms; and the same trend is present in all regions except Oceania:
+
+```{r}
+
+freedom_data %>% 
+   filter(region_name != "Europe") %>% 
+   mutate(region_name = factor(region_name, levels = c("Asia", "Africa", "Oceania", "Americas"))) %>% 
+   mutate(percent_pr = political_rights / 7,
+          percent_cl = civil_liberties / 7) %>% 
+   group_by(year, region_name) %>% 
+   summarise(pr_x_year = 1 - mean(percent_pr),
+             cl_x_year = 1 - mean(percent_cl),
+             .groups = "drop") %>% 
+   pivot_longer(
+      cols = pr_x_year:cl_x_year,
+      names_to = "names",
+      values_to = "values"
+   ) %>%
+   ggplot(aes(x = year, y = values, colour = names)) + 
+   geom_line(size = 1.75, alpha = 0.65) + 
+   theme_light() + 
+   scale_y_continuous(labels = label_percent(accuracy = 1)) + 
+   scale_color_manual(values = c("black", "orange3"),
+                      labels = c("Civil Liberties", "Political Rights")) + 
+   labs(x = NULL, y = NULL,
+        title = "The evolution of Civil Liberties and Political Rights of countries outside Europe",
+        subtitle = "Showing the average points awarded as a percentage of the maximum possible") + 
+   facet_wrap(~region_name, scales = "free") + 
+   theme(
+      axis.text.x = element_text(size = 11, face = "bold"),
+      axis.text.y = element_text(size = 11, face = "bold"),
+      strip.text.x = element_text(size = 12, face = "bold"),
+      plot.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 11, face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   )
+
+```
+
+Therefore, although the world is becoming slightly more free on one metric, it is going backwards when measured on another.
+
+An interesting feature of the above graphs, again with the possible exception of Oceania, is that the level of `political_rights` and `civil_liberties` tend to be closely correlated. We can put a number to this relationship by once again using the `infer` package:
+
+```{r}
+
+freedom_data %>% 
+   specify(political_rights ~ civil_liberties) %>% 
+   calculate(stat = "correlation") %>% 
+   pull(stat)
+
+```
+
+As we can see, the correlation is very strong.
+
+# Reading in extra data
+
+We have seen that the freedoms enjoyed by a given country are correlated with: (1) where the country is located in terms of region; and (2) whether the country is developed or not. These two fact indicate that there may well be a relationship between wealth and freedom.
+
+As such, lets read in some new data. The `wdi` package --- which I learned about from David Robinson's [video](https://www.youtube.com/watch?v=VOzUHk3aaBw) on the topic of this very dataset --- gives us access to GDP data for each country over the entire time period in which we are interested. 
+
+```{r}
+
+world_bank_data <- WDI(indicator = "NY.GDP.PCAP.CD", extra = TRUE)
+
+```
+
+We need to join the above to our `freedom_data` dataset. Does the `country` column in the two datasets line up?
+
+```{r}
+
+freedom_data %>% 
+   anti_join(world_bank_data, by = "country") %>% 
+   distinct(country)
+
+```
+
+Unfortunately there are differences between the datasets, so it won't be possible to join them without a little more work. Thankfully we can use the `countrycode()` function (found in the `countrycode`package) to save us a lot of data-wrangling work:
+
+```{r}
+
+freedom_data <- freedom_data %>% 
+   mutate(iso2c = countrycode(country, "country.name", "iso2c"))
+
+```
+
+Lets tidy up our `world_bank_data` before we `join` the two datasets:
+
+```{r}
+
+world_bank_data <- world_bank_data %>% 
+   rename(gdp = NY.GDP.PCAP.CD) %>% 
+   filter(year >= 1995, year <= 2020) %>% 
+   select(iso2c, year, gdp, income)
+
+```
+
+Both datasets are now ready for `left_join()`:
+
+```{r}
+
+freedom_data <- freedom_data %>% 
+   left_join(world_bank_data, by = c("iso2c", "year")) %>% 
+   drop_na()
+
+```
+
+# Exploring our new dataset
+
+We should first `glimpse()` our data:
+
+```{r}
+
+glimpse(freedom_data)
+
+```
+
+What counts as a high-income country? We can answer this by taking the average of each `income` group:
+
+```{r}
+
+freedom_data %>% 
+   filter(year == 2020) %>% 
+   mutate(income = case_when(
+      income == "Lower middle income" ~ "Lower middle",
+      income == "Upper middle income" ~ "Upper middle",
+      TRUE ~ as.character(income)
+   )) %>% 
+   mutate(income = fct_reorder(income, gdp, .desc = FALSE)) %>% 
+   group_by(income) %>% 
+   summarise(
+      min_gdp = min(gdp),
+      avg_gdp = mean(gdp),
+      max_gdp = max(gdp),
+      .groups = "drop"
+   ) %>% 
+   pivot_longer(
+      cols = ends_with("_gdp"),
+      names_to = "names",
+      values_to = "values"
+   ) %>% 
+   mutate(names = factor(names, levels = c("min_gdp", "avg_gdp", "max_gdp"))) %>% 
+   ggplot(aes(x = income, y = values, fill = names)) + 
+   geom_col(position = "dodge", alpha = 0.5, colour = "black") + 
+   theme_light() + 
+   scale_fill_manual(
+      values = c("black", "ivory4", "orange3"),
+      labels = c("Minimum GDP of group", "Average GDP of group", "Maximum GDP of group")
+   ) +
+   scale_y_continuous(labels = label_dollar()) + 
+   labs(x = NULL, y = NULL,
+        title = "Income categories and their respective GDPs") + 
+   theme(
+      axis.text.x = element_text(face = "bold", size = 10),
+      axis.text.y = element_text(face = "bold", size = 10),
+      plot.title = element_text(face = "bold", size = 14),
+      legend.text = element_text(face = "bold"),
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   )
+
+```
+
+The differences here are astonishing: the amount of GDP increases almost exponentially as we go from low-income to high. 
+
+As we might now expect, these differences translate into differences in freedom. Lets plot the number of free and non-free countries by year according as they fall into one of the above income brackets:
+
+```{r}
+
+freedom_data %>% 
+   group_by(year, income) %>% 
+   summarise(Not_free = sum(status != "F"),
+             Free = sum(status == "F"),
+             .groups = "drop") %>% 
+   pivot_longer(
+      cols = Not_free:Free,
+      names_to = "status",
+      values_to = "values"
+   ) %>% 
+   filter(income != "Not classified") %>% 
+   mutate(income = factor(
+      income, 
+      levels = c("High income", "Upper middle income", "Lower middle income", "Low income"),
+      labels = c(
+         "High income - average $37,722",
+         "Upper middle income - average $6,854",
+         "Lower middle income - average $2,351",
+         "Low income - average $660"
+      ))
+   ) %>%  
+   ggplot(aes(x = year, y = values, colour = status)) + 
+   geom_line(size = 2, alpha = 0.7) +
+   theme_light() + 
+   scale_colour_manual(values = c("black", "orange3"),
+                      labels = c("Free", "Not Free")) +
+   labs(x = NULL, y = NULL, title = "Number of free countries by year",
+        subtitle = "Showing the number of free and non-free countries according to average income") + 
+   theme(
+      axis.text.x = element_text(face = "bold"),
+      axis.text.y = element_text(face = "bold"),
+      plot.title = element_text(face = "bold"),
+      strip.text.x = element_text(face = "bold", size = 11),
+      legend.text = element_text(face = "bold"), 
+      legend.title = element_blank(),
+      legend.position = "bottom"
+   ) + 
+   facet_wrap(~income)
+
+```
+
+It is both remarkable and highly depressing that only the higher income bracket has more free countries than not. In addition, our plot is very static across time, showing how little change there is in each of the income bands. 
+
+# A simple model
+
+We have seen that the `region_name`, the level of `gdp` and the `is_ldc` feature are all indicative of the level of freedom a country enjoys (or not). Lets build a simple model seeing how much of our data these features can explain.
+
+First we do some data-wrangling. We limit ourselves to 2020 and make a new variable, `is_free`, which we will attempt to `predict()`. Our indicator variables will be the features discussed above:
+
+```{r}
+
+model_data <- freedom_data %>% 
+   filter(year == 2020) %>% 
+   mutate(is_free = if_else(status == "F", "free", "not_free")) %>%
+   select(is_free, region_name, gdp, is_ldc)
+
+```
+
+We set a seed so our results are reproducible: 
+
+```{r}
+
+set.seed(2022)
+
+```
+
+We divide our data into training and test splits; we also create cross validation folds and a validation data-set. The validation set is just the outcome variable taken from the test data.
+
+```{r}
+
+freedom_split <- initial_split(model_data, prop = 0.75, strata = region_name)
+
+freedom_training <- training(freedom_split)
+
+freedom_cv_folds <- vfold_cv(freedom_training, v = 10, strata = region_name)
+
+freedom_testing <- testing(freedom_split)
+
+validation_data <- freedom_testing %>% 
+   select(is_free)
+
+freedom_testing <- freedom_testing %>%
+   select(-is_free)
+   
+```
+
+We create a simple `recipe()` in which we do the last of our pre-processing of the data:
+
+```{r}
+
+freedom_recipe <- model_data %>% 
+   recipe(is_free ~ gdp + region_name + is_ldc) %>% 
+   step_string2factor(is_free, skip = TRUE) %>% 
+   step_string2factor(all_nominal_predictors()) %>% 
+   step_normalize(gdp)
+
+```
+
+We then create our `model_spec()`. Here we are building a simple `logistic_reg()` model, which is possible as we have reduced our outcome variable to two levels. Although we have more powerful algorithms available than `glm`, in this very small dataset a simple algorithm should perform reasonably well. 
+
+```{r}
+
+freedom_spec <- logistic_reg() %>% 
+   set_engine("glm") %>% 
+   set_mode("classification")
+
+```
+
+We put both the `recipe()` and the `model_spec` into a `workflow()` object:
+
+```{r}
+
+freedom_workflow <- workflow() %>% 
+   add_model(freedom_spec) %>% 
+   add_recipe(freedom_recipe)
+
+```
+
+And finally we `fit()` our model:
+
+```{r}
+
+freedom_model <- fit(freedom_workflow, data = freedom_training)
+
+```
+
+Now we need to see how well it performed.
+
+# Evaluation
+
+First lets see which variables were considered to be most important:
+
+```{r}
+
+freedom_model %>% 
+   extract_fit_engine() %>% 
+   vi() %>% 
+   mutate(Variable = fct_reorder(Variable, Importance)) %>% 
+   ggplot(aes(x = Variable, y = Importance)) + 
+   geom_point(size = 3, colour = "black", alpha = 0.65) + 
+   geom_segment(
+      aes(x = Variable, xend = Variable, y = 0, yend = Importance), 
+      colour = "black",
+      alpha = 0.65,
+      size = 1.5
+   ) +
+   theme_light() + 
+   labs(x = NULL, y = NULL, 
+        title = "Showing variable importance for each feature") + 
+   theme(
+      axis.text.x = element_text(face = "bold"),
+      axis.text.y = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 14),
+   ) + 
+   coord_flip()
+
+```
+
+It is no surprise to see `gdp` topping the list. But how well does our model do on unseen data?
+
+```{r}
+
+freedom_preds <- predict(freedom_model, new_data = freedom_testing)
+
+```
+
+Lets use `bind_cols()` to add predictions to the `validation_data` dataset:
+
+```{r}
+
+validation_data <- bind_cols(freedom_preds, validation_data) %>% 
+   mutate(is_free = factor(is_free))
+
+```
+
+We can now test our model using the `accuracy()` function from the `yardstick` package:
+
+```{r}
+
+validation_data %>% 
+   accuracy(is_free, .pred_class)
+
+```
+
+This seems to be a reasonable level of accuracy. It is surprising, at least to me, how well we can predict freedom from the group of features we selected as our indicator variables. No doubt we could do a lot better by incorporating other, more nuanced geopolitical factors; but the three features we have used - namely `region_name`, `gdp` and `is_ldc`- are capable of doing most of the heavy lifting unaided.  
+
+
+
+
+
+
+
+
+
+
+
