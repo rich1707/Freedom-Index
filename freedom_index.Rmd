@@ -2,11 +2,8 @@
 title: "Tidy Tuesday - World Freedom Index"
 author: "Richard Ryan"
 date: '28 May 2022'
-output: 
-   html_document:
-      css: style.css
-      theme: readable
-      highlight: pygments
+output: html_document
+
 ---
 
 ```{r setup, include=FALSE}
@@ -17,8 +14,6 @@ knitr::opts_chunk$set(
    paged.print = FALSE
 )
 ```
-
-<body style="background-color:#fcfbff;">
 
 # Introduction
 
