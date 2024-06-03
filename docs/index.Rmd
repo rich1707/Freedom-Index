@@ -22,8 +22,6 @@ knitr::opts_chunk$set(
 )
 ```
 
-<body style="background-color:#ede8df;">
-
 # Introduction
 
 The data we'll be using for the exercise comes from the *Tidy Tuesday* repository on [Github](https://github.com/rfordatascience/tidytuesday) and deals with political rights and civil liberties in each of the world's countries. The dataset is available [here.](https://github.com/rfordatascience/tidytuesday/blob/master/data/2022/2022-02-22/readme.md)
@@ -64,7 +62,7 @@ Are there any missing values?
 
 ```{r}
 
-freedom_data %>% 
+freedom_data |> 
    summarise(across(everything(), ~sum(is.na(.x))))
 
 ```
@@ -73,9 +71,9 @@ We can use the `janitor` package to help clean up the variable names, which aren
 
 ```{r}
 
-freedom_data <- freedom_data %>% 
-   clean_names() %>% 
-   rename(civil_liberties = cl, political_rights = pr) %>% 
+freedom_data <- freedom_data |> 
+   clean_names() |> 
+   rename(civil_liberties = cl, political_rights = pr) |> 
    mutate(country = if_else(country == "CÃƒÂ´te dÃ¢â‚¬â„¢Ivoire", "Ivory Coast", country))
 
 ```
@@ -88,25 +86,25 @@ Start with a basic plot showing the situation by region:
 
 ```{r}
 
-freedom_data %>% 
-   filter(year == 2020) %>% 
-   group_by(region_name) %>% 
+freedom_data |> 
+   filter(year == 2020) |> 
+   group_by(region_name) |> 
    summarise(
       total = n(),
       free = sum(status == "F"),
       .groups = "drop"
-   ) %>% 
+   ) |> 
    pivot_longer(
       cols = total:free,
       names_to = "names",
       values_to = "values"
-   ) %>% 
+   ) |> 
    mutate(region_name = factor(
-      region_name, levels = c("Oceania", "Americas", "Europe", "Asia", "Africa"))) %>% 
+      region_name, levels = c("Oceania", "Americas", "Europe", "Asia", "Africa"))) |> 
    ggplot(aes(x = region_name, y = values, fill = names)) + 
-   geom_col(position = "dodge", colour = "black", alpha = 0.5, width = 0.75) + 
+   geom_col(position = "dodge2", colour = "black", alpha = 0.5, width = 0.5) + 
    theme_light() + 
-   scale_fill_manual(values = c("black", "orange3"),
+   scale_fill_manual(values = c("#E69F00", "#0072B2"),
                      labels = c("Free Countries in Region", "Total Countries in Region")) + 
    labs(x = NULL, y = NULL,
         title = "Total Countries by Region") +
@@ -125,32 +123,32 @@ Clearly the situation is very bad indeed in Asia and Africa. As these regions ar
 
 ```{r}
 
-freedom_data %>% 
-   group_by(year, is_ldc) %>% 
+freedom_data |> 
+   group_by(year, is_ldc) |> 
    mutate(free = sum(status == "F"),
           part_free = sum(status == "PF"),
-          not_free = sum(status == "NF")) %>% 
-   ungroup() %>% 
-   select(year, is_ldc, contains("free")) %>% 
-   distinct() %>%
-   group_by(year, is_ldc) %>% 
-   mutate(totals = free + part_free + not_free) %>% 
-   ungroup() %>%
+          not_free = sum(status == "NF")) |> 
+   ungroup() |> 
+   select(year, is_ldc, contains("free")) |> 
+   distinct() |>
+   group_by(year, is_ldc) |> 
+   mutate(totals = free + part_free + not_free) |> 
+   ungroup() |>
    mutate(free_percent = free / totals,
           part_free_percent = part_free / totals,
-          not_free_percent = not_free / totals) %>%
-   select(year, is_ldc, contains("percent")) %>%
+          not_free_percent = not_free / totals) |>
+   select(year, is_ldc, contains("percent")) |>
    pivot_longer(
       cols = contains("percent"),
       names_to = "names",
       values_to = "values"
-   ) %>%
-   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
+   ) |>
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) |> 
    ggplot(aes(x = year, y = values, colour = names)) +
-   geom_line(size = 2, alpha = 0.65) +
+   geom_line(size = 2, alpha = 0.5) +
    theme_light() + 
    scale_y_continuous(labels = label_percent(accuracy = 1)) +
-   scale_color_manual(values = c("black", "orange3", "ivory4"),
+   scale_color_manual(values = c("#009E73","#E69F00", "#0072B2"),
                       labels = c("Free", "Partly Free", "Not Free")) + 
    labs(x = NULL, y = NULL,
         title = "Percentage of free countries by developed status") + 
@@ -171,15 +169,15 @@ The difference between the developed and least-developed world is striking. We c
 
 ```{r}
 
-diff_hat <- freedom_data %>% 
-   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
-   specify(status ~ is_ldc) %>% 
+diff_hat <- freedom_data |> 
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) |> 
+   specify(status ~ is_ldc) |> 
    calculate(stat = "Chisq")
 
-freedom_data %>% 
-   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) %>% 
-   specify(status ~ is_ldc) %>% 
-   assume(distribution = "Chisq") %>% 
+freedom_data |> 
+   mutate(is_ldc = if_else(is_ldc == 1, "Least Developed", "Developed")) |> 
+   specify(status ~ is_ldc) |> 
+   assume(distribution = "Chisq") |> 
    get_p_value(obs_stat = diff_hat, direction = "two-sided")
 
 ```
@@ -192,21 +190,21 @@ It's impossible to answer this question; besides the issue is clearly too comple
 
 ```{r}
 
-freedom_data %>% 
-   filter(year == 1995 | year == 2020) %>% 
-   mutate(year = factor(year)) %>% 
+freedom_data |> 
+   filter(year == 1995 | year == 2020) |> 
+   mutate(year = factor(year)) |> 
    mutate(region_name = factor(
       region_name, levels = c("Asia", "Africa", "Oceania", "Americas","Europe")
-   )) %>% 
-   group_by(year, region_name) %>% 
+   )) |> 
+   group_by(year, region_name) |> 
    summarise(
       free = sum(status == "F"),
       .groups = "drop"
-   ) %>% 
+   ) |> 
    ggplot(aes(x = region_name, y = free, fill = year)) + 
-   geom_col(position = "dodge", colour = "black", alpha = 0.5, width = 0.76) +
+   geom_col(position = "dodge2", colour = "black", alpha = 0.5, width = 0.5) +
    theme_light() + 
-   scale_fill_manual(values = c("black", "orange3"),
+   scale_fill_manual(values = c("#E69F00", "#0072B2"),
                      labels = c("Free Countries in 1995", "Free Countries in 2020")) +
    labs(x = NULL, y = NULL,
         title = "Total of Free Countries in 1995 and in 2020",
@@ -226,24 +224,24 @@ As we can see, the number of free countries has increased slightly in all region
 
 ```{r}
 
-freedom_data %>% 
-   filter(region_name == "Europe") %>% 
+freedom_data |> 
+   filter(region_name == "Europe") |> 
    mutate(percent_pr = political_rights / 7,
-          percent_cl = civil_liberties / 7) %>% 
-   group_by(year, region_name) %>% 
+          percent_cl = civil_liberties / 7) |> 
+   group_by(year, region_name) |> 
    summarise(pr_x_year = 1 - mean(percent_pr),
              cl_x_year = 1 - mean(percent_cl),
-             .groups = "drop") %>% 
+             .groups = "drop") |> 
    pivot_longer(
       cols = pr_x_year:cl_x_year,
       names_to = "names",
       values_to = "values"
-   ) %>% 
+   ) |> 
    ggplot(aes(x = year, y = values, colour = names)) + 
-   geom_line(size = 2, alpha = 0.65) + 
+   geom_line(size = 2, alpha = 0.5) + 
    theme_light() + 
    scale_y_continuous(labels = label_percent(accuracy = 1)) + 
-   scale_color_manual(values = c("black", "orange3"),
+   scale_color_manual(values = c("#E69F00", "#0072B2"),
                       labels = c("Civil Liberties", "Political Rights")) + 
    labs(x = NULL, y = NULL,
         title = "The evolution of Civil Liberties and Political Rights of countries in Europe",
@@ -263,25 +261,25 @@ Here we can see that Europe is going backwards in terms of freedoms; and the sam
 
 ```{r}
 
-freedom_data %>% 
-   filter(region_name != "Europe") %>% 
-   mutate(region_name = factor(region_name, levels = c("Asia", "Africa", "Oceania", "Americas"))) %>% 
+freedom_data |> 
+   filter(region_name != "Europe") |> 
+   mutate(region_name = factor(region_name, levels = c("Asia", "Africa", "Oceania", "Americas"))) |> 
    mutate(percent_pr = political_rights / 7,
-          percent_cl = civil_liberties / 7) %>% 
-   group_by(year, region_name) %>% 
+          percent_cl = civil_liberties / 7) |> 
+   group_by(year, region_name) |> 
    summarise(pr_x_year = 1 - mean(percent_pr),
              cl_x_year = 1 - mean(percent_cl),
-             .groups = "drop") %>% 
+             .groups = "drop") |> 
    pivot_longer(
       cols = pr_x_year:cl_x_year,
       names_to = "names",
       values_to = "values"
-   ) %>%
+   ) |>
    ggplot(aes(x = year, y = values, colour = names)) + 
-   geom_line(size = 1.75, alpha = 0.65) + 
+   geom_line(size = 1.75, alpha = 0.5) + 
    theme_light() + 
    scale_y_continuous(labels = label_percent(accuracy = 1)) + 
-   scale_color_manual(values = c("black", "orange3"),
+   scale_color_manual(values = c("#E69F00", "#0072B2"),
                       labels = c("Civil Liberties", "Political Rights")) + 
    labs(x = NULL, y = NULL,
         title = "The evolution of Civil Liberties and Political Rights of countries outside Europe",
@@ -305,9 +303,9 @@ An interesting feature of the above graphs, again with the possible exception of
 
 ```{r}
 
-freedom_data %>% 
-   specify(political_rights ~ civil_liberties) %>% 
-   calculate(stat = "correlation") %>% 
+freedom_data |> 
+   specify(political_rights ~ civil_liberties) |> 
+   calculate(stat = "correlation") |> 
    pull(stat)
 
 ```
@@ -330,8 +328,8 @@ We need to join the above to our `freedom_data` dataset. Does the `country` colu
 
 ```{r}
 
-freedom_data %>% 
-   anti_join(world_bank_data, by = "country") %>% 
+freedom_data |> 
+   anti_join(world_bank_data, by = "country") |> 
    distinct(country)
 
 ```
@@ -340,7 +338,7 @@ Unfortunately there are differences between the datasets, so it won't be possibl
 
 ```{r}
 
-freedom_data <- freedom_data %>% 
+freedom_data <- freedom_data |> 
    mutate(iso2c = countrycode(country, "country.name", "iso2c"))
 
 ```
@@ -349,9 +347,9 @@ Lets tidy up our `world_bank_data` before we `join` the two datasets:
 
 ```{r}
 
-world_bank_data <- world_bank_data %>% 
-   rename(gdp = NY.GDP.PCAP.CD) %>% 
-   filter(year >= 1995, year <= 2020) %>% 
+world_bank_data <- world_bank_data |> 
+   rename(gdp = NY.GDP.PCAP.CD) |> 
+   filter(year >= 1995, year <= 2020) |> 
    select(iso2c, year, gdp, income)
 
 ```
@@ -360,8 +358,8 @@ Both datasets are now ready for `left_join()`:
 
 ```{r}
 
-freedom_data <- freedom_data %>% 
-   left_join(world_bank_data, by = c("iso2c", "year")) %>% 
+freedom_data <- freedom_data |> 
+   left_join(world_bank_data, by = c("iso2c", "year")) |> 
    drop_na()
 
 ```
@@ -380,32 +378,32 @@ What counts as a high-income country? We can answer this by taking the average o
 
 ```{r}
 
-freedom_data %>% 
-   filter(year == 2020) %>% 
+freedom_data |> 
+   filter(year == 2020) |> 
    mutate(income = case_when(
       income == "Lower middle income" ~ "Lower middle",
       income == "Upper middle income" ~ "Upper middle",
       TRUE ~ as.character(income)
-   )) %>% 
-   mutate(income = fct_reorder(income, gdp, .desc = FALSE)) %>% 
-   group_by(income) %>% 
+   )) |> 
+   mutate(income = fct_reorder(income, gdp, .desc = FALSE)) |> 
+   group_by(income) |> 
    summarise(
       min_gdp = min(gdp),
       avg_gdp = mean(gdp),
       max_gdp = max(gdp),
       .groups = "drop"
-   ) %>% 
+   ) |> 
    pivot_longer(
       cols = ends_with("_gdp"),
       names_to = "names",
       values_to = "values"
-   ) %>% 
-   mutate(names = factor(names, levels = c("min_gdp", "avg_gdp", "max_gdp"))) %>% 
+   ) |> 
+   mutate(names = factor(names, levels = c("min_gdp", "avg_gdp", "max_gdp"))) |> 
    ggplot(aes(x = income, y = values, fill = names)) + 
-   geom_col(position = "dodge", alpha = 0.5, colour = "black") + 
+   geom_col(position = "dodge2", alpha = 0.5, colour = "black") + 
    theme_light() + 
    scale_fill_manual(
-      values = c("black", "ivory4", "orange3"),
+      values = c("#009E73","#E69F00", "#0072B2"),
       labels = c("Minimum GDP of group", "Average GDP of group", "Maximum GDP of group")
    ) +
    scale_y_continuous(labels = label_dollar()) + 
@@ -428,17 +426,17 @@ As we might now expect, these differences translate into differences in freedom.
 
 ```{r}
 
-freedom_data %>% 
-   group_by(year, income) %>% 
+freedom_data |> 
+   group_by(year, income) |> 
    summarise(Not_free = sum(status != "F"),
              Free = sum(status == "F"),
-             .groups = "drop") %>% 
+             .groups = "drop") |> 
    pivot_longer(
       cols = Not_free:Free,
       names_to = "status",
       values_to = "values"
-   ) %>% 
-   filter(income != "Not classified") %>% 
+   ) |> 
+   filter(income != "Not classified") |> 
    mutate(income = factor(
       income, 
       levels = c("High income", "Upper middle income", "Lower middle income", "Low income"),
@@ -448,11 +446,11 @@ freedom_data %>%
          "Lower middle income - average $2,351",
          "Low income - average $660"
       ))
-   ) %>%  
+   ) |>  
    ggplot(aes(x = year, y = values, colour = status)) + 
-   geom_line(size = 2, alpha = 0.7) +
+   geom_line(size = 2, alpha = 0.5) +
    theme_light() + 
-   scale_colour_manual(values = c("black", "orange3"),
+   scale_colour_manual(values = c("#E69F00", "#0072B2"),
                       labels = c("Free", "Not Free")) +
    labs(x = NULL, y = NULL, title = "Number of free countries by year",
         subtitle = "Showing the number of free and non-free countries according to average income") + 
@@ -479,9 +477,9 @@ First we do some data-wrangling. We limit ourselves to 2020 and make a new varia
 
 ```{r}
 
-model_data <- freedom_data %>% 
-   filter(year == 2020) %>% 
-   mutate(is_free = if_else(status == "F", "free", "not_free")) %>%
+model_data <- freedom_data |> 
+   filter(year == 2020) |> 
+   mutate(is_free = if_else(status == "F", "free", "not_free")) |>
    select(is_free, region_name, gdp, is_ldc)
 
 ```
@@ -506,10 +504,10 @@ freedom_cv_folds <- vfold_cv(freedom_training, v = 10, strata = region_name)
 
 freedom_testing <- testing(freedom_split)
 
-validation_data <- freedom_testing %>% 
+validation_data <- freedom_testing |> 
    select(is_free)
 
-freedom_testing <- freedom_testing %>%
+freedom_testing <- freedom_testing |>
    select(-is_free)
    
 ```
@@ -518,10 +516,10 @@ We create a simple `recipe()` in which we do the last of our pre-processing of t
 
 ```{r}
 
-freedom_recipe <- model_data %>% 
-   recipe(is_free ~ gdp + region_name + is_ldc) %>% 
-   step_string2factor(is_free, skip = TRUE) %>% 
-   step_string2factor(all_nominal_predictors()) %>% 
+freedom_recipe <- model_data |> 
+   recipe(is_free ~ gdp + region_name + is_ldc) |> 
+   step_string2factor(is_free, skip = TRUE) |> 
+   step_string2factor(all_nominal_predictors()) |> 
    step_normalize(gdp)
 
 ```
@@ -530,8 +528,8 @@ We then create our `model_spec()`. Here we are building a simple `logistic_reg()
 
 ```{r}
 
-freedom_spec <- logistic_reg() %>% 
-   set_engine("glm") %>% 
+freedom_spec <- logistic_reg() |> 
+   set_engine("glm") |> 
    set_mode("classification")
 
 ```
@@ -540,8 +538,8 @@ We put both the `recipe()` and the `model_spec` into a `workflow()` object:
 
 ```{r}
 
-freedom_workflow <- workflow() %>% 
-   add_model(freedom_spec) %>% 
+freedom_workflow <- workflow() |> 
+   add_model(freedom_spec) |> 
    add_recipe(freedom_recipe)
 
 ```
@@ -562,10 +560,10 @@ First lets see which variables were considered to be most important:
 
 ```{r}
 
-freedom_model %>% 
-   extract_fit_engine() %>% 
-   vi() %>% 
-   mutate(Variable = fct_reorder(Variable, Importance)) %>% 
+freedom_model |> 
+   extract_fit_engine() |> 
+   vi() |> 
+   mutate(Variable = fct_reorder(Variable, Importance)) |> 
    ggplot(aes(x = Variable, y = Importance)) + 
    geom_point(size = 3, colour = "black", alpha = 0.65) + 
    geom_segment(
@@ -598,7 +596,7 @@ Lets use `bind_cols()` to add predictions to the `validation_data` dataset:
 
 ```{r}
 
-validation_data <- bind_cols(freedom_preds, validation_data) %>% 
+validation_data <- bind_cols(freedom_preds, validation_data) |> 
    mutate(is_free = factor(is_free))
 
 ```
@@ -607,7 +605,7 @@ We can now test our model using the `accuracy()` function from the `yardstick` p
 
 ```{r}
 
-validation_data %>% 
+validation_data |> 
    accuracy(is_free, .pred_class)
 
 ```

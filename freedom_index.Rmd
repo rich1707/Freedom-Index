@@ -95,7 +95,8 @@ freedom_data %>%
    mutate(region_name = factor(
       region_name, levels = c("Oceania", "Americas", "Europe", "Asia", "Africa"))) %>% 
    ggplot(aes(x = region_name, y = values, fill = names)) + 
-   geom_col(position = "dodge", colour = "black", alpha = 0.5, width = 0.75) + 
+   geom_col(position = position_dodge(width = 0.75), 
+            colour = "black", alpha = 0.5, width = 0.75) + 
    theme_light() + 
    scale_fill_manual(values = c("black", "orange3"),
                      labels = c("Free Countries in Region", "Total Countries in Region")) + 
